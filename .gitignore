@@ -3,3 +3,4 @@ env3.10/
 *.pyc
 __pycache__/
 RawDataset/
+.DS_Store
