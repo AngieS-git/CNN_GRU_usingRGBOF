@@ -10,7 +10,7 @@ def compute_optical_flow(prev_frame, next_frame):
     lk_params = dict(winSize=(21, 21), maxLevel=3, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
 
     # Detect good features to track (Shi-Tomasi corners)
-    feature_params = dict(maxCorners=5000, qualityLevel=0.01, minDistance=0.5)
+    feature_params = dict(maxCorners=3000, qualityLevel=0.01, minDistance=0.1)
     p0 = cv2.goodFeaturesToTrack(prev_gray, mask=None, **feature_params)
 
     # Calculate optical flow
@@ -66,15 +66,11 @@ def main():
     # Create MEI and MHI
     mei, mhi = create_mei_mhi((good_old, good_new), prev_frame.shape[:2], tau=10)
 
-    # Normalize MEI and MHI for better visualization
+    # Normalize MEI for better visualization
     mei_norm = cv2.normalize(mei, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    mhi_norm = cv2.normalize(mhi, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
-    # Combine results into a single image
-    combined = np.hstack((prev_frame, cv2.cvtColor(mei_norm, cv2.COLOR_GRAY2BGR), cv2.cvtColor(mhi_norm, cv2.COLOR_GRAY2BGR)))
-
-    # Display the combined image
-    cv2.imshow('Combined: Original | MEI | MHI', combined)
+    # Display only the MEI
+    cv2.imshow('Motion Energy Image (MEI)', mei_norm)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
