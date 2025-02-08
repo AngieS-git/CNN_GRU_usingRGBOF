@@ -2,15 +2,30 @@ import cv2
 import numpy as np
 from argparse import ArgumentParser
 
-def compute_dense_optical_flow(method, video_path, frame1_index=0, frame2_index=30):
+def create_dense_grid(frame, step=10):
     """
-    Extract two frames from a video and compute dense optical flow between them.
-    
+    Create a dense grid of points to track across the frame.
+
     Args:
-        method: Optical flow method to use
-        video_path: Path to the input video file
-        frame1_index: Index of first frame (default: 0)
-        frame2_index: Index of second frame (default: 1)
+        frame: The input image frame.
+        step: Spacing between grid points.
+
+    Returns:
+        A numpy array of shape (N,1,2) with coordinates of the grid points.
+    """
+    h, w = frame.shape[:2]
+    y, x = np.mgrid[step//2:h:step, step//2:w:step].reshape(2, -1)
+    return np.float32(np.vstack((x, y)).T).reshape(-1, 1, 2)
+
+def compute_dense_lucas_kanade(video_path, frame1_index=0, frame2_index=30, step=10):
+    """
+    Compute dense optical flow using Lucas-Kanade method with a uniform grid of points.
+
+    Args:
+        video_path: Path to the input video file.
+        frame1_index: Index of first frame.
+        frame2_index: Index of second frame.
+        step: Distance between tracked grid points.
     """
     # Read the video
     cap = cv2.VideoCapture(video_path)
@@ -38,27 +53,35 @@ def compute_dense_optical_flow(method, video_path, frame1_index=0, frame2_index=
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
     
-    # Calculate dense optical flow
-    flow = method(gray1, gray2, None)
-    
-    # Create HSV image for visualization
-    hsv = np.zeros_like(frame1)
-    hsv[..., 1] = 255
-    
-    # Convert flow to polar coordinates
-    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-    
-    # Use Hue and Value to encode the optical flow
-    hsv[..., 0] = ang * 180 / np.pi / 2
-    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
-    
-    # Convert HSV to BGR for visualization
-    flow_vis = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    
+    # Generate a dense grid of points
+    p0 = create_dense_grid(gray1, step)
+
+    # Define parameters for Lucas-Kanade optical flow
+    lk_params = dict(winSize=(15, 15), maxLevel=2, 
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    # Compute optical flow using Lucas-Kanade method
+    p1, st, err = cv2.calcOpticalFlowPyrLK(gray1, gray2, p0, None, **lk_params)
+
+    # Select good points
+    good_new = p1[st == 1]
+    good_old = p0[st == 1]
+
+    # Draw motion vectors (arrows)
+    mask = np.zeros_like(frame1)
+    for (new, old) in zip(good_new, good_old):
+        a, b = new.ravel()
+        c, d = old.ravel()
+        mask = cv2.line(mask, (int(c), int(d)), (int(a), int(b)), (0, 255, 0), 1)
+        frame2 = cv2.circle(frame2, (int(a), int(b)), 2, (0, 0, 255), -1)
+
+    # Overlay optical flow visualization
+    output = cv2.add(frame2, mask)
+
     # Display results
     cv2.imshow('Frame 1', frame1)
     cv2.imshow('Frame 2', frame2)
-    cv2.imshow('Optical Flow', flow_vis)
+    cv2.imshow('Lucas-Kanade Dense Optical Flow', output)
     
     while True:
         k = cv2.waitKey(25) & 0xFF
@@ -93,12 +116,19 @@ def main():
         default=30,
         help="Index of second frame (default: 30)",
     )
+    parser.add_argument(
+        "--step",
+        type=int,
+        default=10,
+        help="Grid spacing for dense flow visualization (default: 10)",
+    )
     
     args = parser.parse_args()
     
     if args.algorithm == "lucaskanade_dense":
-        method = cv2.optflow.calcOpticalFlowSparseToDense
-        compute_dense_optical_flow(method, args.video_path, args.frame1, args.frame2)
+        compute_dense_lucas_kanade(args.video_path, args.frame1, args.frame2, args.step)
+    else:
+        raise ValueError("Invalid algorithm selected.")
 
 if __name__ == "__main__":
     main()
