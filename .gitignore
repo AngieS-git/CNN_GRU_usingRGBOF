@@ -1,6 +1,16 @@
+# Ignore virtual environments
 env/
 env3.10/
+
+# Ignore Python bytecode files
 *.pyc
 __pycache__/
-RawDataset/
+
+# Ignore macOS system files
 .DS_Store
+
+# Ignore dataset folders
+RawDataset/
+
+# Ignore Jupyter notebook checkpoints (if applicable)
+.ipynb_checkpoints/
