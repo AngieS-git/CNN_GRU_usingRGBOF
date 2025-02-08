@@ -1,13 +1,3 @@
-# CNN_GRU_usingRGBOF
-Thesis
-
-## Environment
-
-Yango Mac M1 Chip environment.
-
-## Requirements
-
-```plaintext
 annotated-types==0.7.0
 appnope==0.1.4
 asttokens==3.0.0
@@ -80,4 +70,3 @@ typing_extensions==4.12.2
 urllib3==2.3.0
 wandb==0.19.5
 wcwidth==0.2.13
-```
