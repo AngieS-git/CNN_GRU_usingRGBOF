@@ -1,66 +1,104 @@
-from tensorflow import keras
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, GRU, Dense, TimeDistributed, Concatenate, Add, Activation, DepthwiseConv2D, Reshape, BatchNormalization
-from tensorflow.keras.models import Model
-
-def create_rgb_cnn_architecture(input_shape=(224, 224, 3)):  # Example simple RGB CNN
-    input_tensor = Input(shape=input_shape)
-    x = Conv2D(32, (3, 3), activation='relu')(input_tensor)
-    x = MaxPooling2D((2, 2))(x)
-    x = Conv2D(64, (3, 3), activation='relu')(x)
-    x = MaxPooling2D((2, 2))(x)
-    x = Flatten()(x)  # Flatten *after* TimeDistributed will flatten frame-wise features
-    return Model(inputs=input_tensor, outputs=x)
-
-def create_optical_flow_cnn_architecture(input_shape=(224, 224, 2)): # Example simple OF CNN - or use MobileNet here!
-    input_tensor = Input(shape=input_shape)
-    x = Conv2D(32, (3, 3), activation='relu')(input_tensor)
-    x = MaxPooling2D((2, 2))(x)
-    x = Conv2D(64, (3, 3), activation='relu')(x)
-    x = MaxPooling2D((2, 2))(x)
-    x = Flatten()(x) # Flatten *after* TimeDistributed will flatten frame-wise features
-    return Model(inputs=input_tensor, outputs=x)
-
-# ----- Define Input Shapes -----
-rgb_input_shape = (None, 224, 224, 3) # (Time steps, Height, Width, Channels) - None for variable time steps
-of_input_shape = (None, 224, 224, 2) # (Time steps, Height, Width, OF Channels - e.g., 2 for x, y flow)
-num_classes = 10 # Example: 10 action classes~
-
-# ----- Input Layers -----
-input_rgb = Input(shape=rgb_input_shape)
-input_of = Input(shape=of_input_shape)
-
-# ----- CNN Models -----
-rgb_cnn_model = create_rgb_cnn_architecture()
-of_cnn_model = create_optical_flow_cnn_architecture() # Or replace with MobileNet!
-
-# ----- TimeDistributed CNNs (Frame-wise feature extraction) -----
-rgb_features_sequence = TimeDistributed(rgb_cnn_model)(input_rgb)
-of_features_sequence = TimeDistributed(of_cnn_model)(input_of)
-
-# ----- GRU Layers -----
-rgb_gru_output = GRU(units=128)(rgb_features_sequence) # Example GRU units
-of_gru_output = GRU(units=128)(of_features_sequence) # Example GRU units
-
-# ----- Fusion (Late Fusion - Concatenate) -----
-merged_features = Concatenate()([rgb_gru_output, of_gru_output])
-
-# ----- Classification Layers -----
-dense_layer = Dense(units=256, activation='relu')(merged_features)
-output_layer = Dense(units=num_classes, activation='softmax')(dense_layer)
-
-# ----- Create the 2-Stream Model -----
-model = Model(inputs=[input_rgb, input_of], outputs=output_layer)
-
-# ----- Compile the Model -----
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-
-# ----- Model Summary (Optional) -----
-model.summary()
-
-# ----- Example Training (using dummy data - replace with your actual data) -----
+import cv2
 import numpy as np
-dummy_rgb_data = np.random.rand(100, 10, 224, 224, 3) # 100 samples, 10 time steps, RGB frames
-dummy_of_data = np.random.rand(100, 10, 224, 224, 2) # 100 samples, 10 time steps, Optical Flow frames
-dummy_labels = keras.utils.to_categorical(np.random.randint(0, num_classes, size=(100,)), num_classes=num_classes) # Example one-hot encoded labels
+from argparse import ArgumentParser
 
-model.fit([dummy_rgb_data, dummy_of_data], dummy_labels, epochs=10, batch_size=32)
+def compute_dense_optical_flow(method, video_path, frame1_index=0, frame2_index=10):
+    """
+    Extract two frames from a video and compute dense optical flow between them.
+    
+    Args:
+        method: Optical flow method to use
+        video_path: Path to the input video file
+        frame1_index: Index of first frame (default: 0)
+        frame2_index: Index of second frame (default: 1)
+    """
+    # Read the video
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError("Could not open video file")
+    
+    # Get total frame count
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if frame2_index >= total_frames:
+        raise ValueError(f"Frame index {frame2_index} exceeds video length of {total_frames} frames")
+    
+    # Read first frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame1_index)
+    ret, frame1 = cap.read()
+    if not ret:
+        raise ValueError("Could not read first frame")
+    
+    # Read second frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame2_index)
+    ret, frame2 = cap.read()
+    if not ret:
+        raise ValueError("Could not read second frame")
+    
+    # Convert frames to grayscale
+    gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    
+    # Calculate dense optical flow
+    flow = method(gray1, gray2, None)
+    
+    # Create HSV image for visualization
+    hsv = np.zeros_like(frame1)
+    hsv[..., 1] = 255
+    
+    # Convert flow to polar coordinates
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    
+    # Use Hue and Value to encode the optical flow
+    hsv[..., 0] = ang * 180 / np.pi / 2
+    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+    
+    # Convert HSV to BGR for visualization
+    flow_vis = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    
+    # Display results
+    cv2.imshow('Frame 1', frame1)
+    cv2.imshow('Frame 2', frame2)
+    cv2.imshow('Optical Flow', flow_vis)
+    
+    while True:
+        k = cv2.waitKey(25) & 0xFF
+        if k == 27:  # Press ESC to exit
+            break
+    
+    cv2.destroyAllWindows()
+    cap.release()
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--algorithm",
+        choices=["lucaskanade_dense"],
+        required=True,
+        help="Optical flow algorithm to use",
+    )
+    parser.add_argument(
+        "--video_path",
+        required=True,
+        help="Path to the video file",
+    )
+    parser.add_argument(
+        "--frame1",
+        type=int,
+        default=0,
+        help="Index of first frame (default: 0)",
+    )
+    parser.add_argument(
+        "--frame2",
+        type=int,
+        default=30,
+        help="Index of second frame (default: 30)",
+    )
+    
+    args = parser.parse_args()
+    
+    if args.algorithm == "lucaskanade_dense":
+        method = cv2.optflow.calcOpticalFlowSparseToDense
+        compute_dense_optical_flow(method, args.video_path, args.frame1, args.frame2)
+
+if __name__ == "__main__":
+    main()
