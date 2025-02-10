@@ -2,3 +2,5 @@ raw/
 optical_flow_video/
 downgraded_raw/
 videos/
+rgb_data/
+opticalflow_data/
