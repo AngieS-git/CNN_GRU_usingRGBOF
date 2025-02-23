@@ -103,19 +103,10 @@ def main():
 
     args = parser.parse_args()
     video_path = args.video_path
-    if args.algorithm == "lucaskanade":
-        lucas_kanade_method(video_path)
-    elif args.algorithm == "lucaskanade_dense":
+
+    if args.algorithm == "lucaskanade_dense":
         method = cv2.optflow.calcOpticalFlowSparseToDense
         dense_optical_flow(method, video_path, to_gray=True)
-    elif args.algorithm == "farneback":
-        method = cv2.calcOpticalFlowFarneback
-        params = [0.5, 3, 15, 3, 5, 1.2, 0]  # Farneback's algorithm parameters
-        dense_optical_flow(method, video_path, params, to_gray=True)
-    elif args.algorithm == "rlof":
-        method = cv2.optflow.calcOpticalFlowDenseRLOF
-        dense_optical_flow(method, video_path)
-
 
 if __name__ == "__main__":
     main()
